@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SnapLink – URL Shortener</title>
+  <meta name="description" content="SnapLink instantly shortens any URL into a clean, shareable link. Fast, free, and beautifully simple." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Tokens ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0b14;
+      --surface:   #11132a;
+      --surface2:  #181a36;
+      --border:    rgba(139, 92, 246, 0.18);
+      --primary:   #8b5cf6;
+      --primary2:  #a78bfa;
+      --accent:    #06b6d4;
+      --text:      #e2e8f0;
+      --muted:     #94a3b8;
+      --success:   #10b981;
+      --error:     #f43f5e;
+      --radius:    14px;
+      --radius-sm: 8px;
+      --glow:      0 0 40px rgba(139, 92, 246, 0.25);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* ── Background orbs ─────────────────────────────────────────── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%);
+      top: -200px; left: -150px;
+      animation: drift1 12s ease-in-out infinite alternate;
+    }
+    .orb-2 {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%);
+      bottom: -150px; right: -100px;
+      animation: drift2 15s ease-in-out infinite alternate;
+    }
+    @keyframes drift1 { from { transform: translate(0,0); } to { transform: translate(60px, 40px); } }
+    @keyframes drift2 { from { transform: translate(0,0); } to { transform: translate(-50px, -30px); } }
+
+    /* ── Layout ──────────────────────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 700px;
+      padding: 60px 24px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 48px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────── */
+    header { text-align: center; }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 4px 20px rgba(139,92,246,0.4);
+    }
+    .logo-icon svg { width: 22px; height: 22px; fill: white; }
+    .logo-text {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(90deg, var(--primary2), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #ffffff 30%, var(--primary2) 70%, var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 14px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      max-width: 480px;
+    }
+
+    /* ── Card ────────────────────────────────────────────────────── */
+    .card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 36px;
+      box-shadow: var(--glow), 0 24px 64px rgba(0,0,0,0.4);
+      transition: box-shadow 0.3s;
+    }
+    .card:hover {
+      box-shadow: 0 0 60px rgba(139,92,246,0.3), 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    /* ── Form ────────────────────────────────────────────────────── */
+    .form-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    #url-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    #url-input::placeholder { color: var(--muted); }
+    #url-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(139,92,246,0.15);
+    }
+    #url-input.error {
+      border-color: var(--error);
+      box-shadow: 0 0 0 3px rgba(244,63,94,0.15);
+    }
+
+    #shorten-btn {
+      background: linear-gradient(135deg, var(--primary), #6d28d9);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 14px 26px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 16px rgba(139,92,246,0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #shorten-btn:hover:not(:disabled) {
+      opacity: 0.9;
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(139,92,246,0.5);
+    }
+    #shorten-btn:active:not(:disabled) { transform: translateY(0); }
+    #shorten-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #shorten-btn.loading .btn-text { display: none; }
+    #shorten-btn.loading .spinner { display: block; }
+
+    /* ── Messages ─────────────────────────────────────────────────── */
+    .message {
+      margin-top: 16px;
+      padding: 4px 0;
+      font-size: 0.875rem;
+      min-height: 22px;
+      transition: opacity 0.3s;
+    }
+    .message.error-msg { color: var(--error); }
+    .message.empty { opacity: 0; }
+
+    /* ── Result ──────────────────────────────────────────────────── */
+    #result-box {
+      margin-top: 24px;
+      background: var(--surface2);
+      border: 1px solid rgba(16,185,129,0.3);
+      border-radius: var(--radius-sm);
+      padding: 18px 20px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      animation: fadeIn 0.35s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    #result-box.visible { display: flex; }
+
+    .result-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--success);
+      margin-bottom: 4px;
+    }
+    #short-link {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all;
+    }
+    #short-link:hover { text-decoration: underline; }
+
+    #copy-btn {
+      flex-shrink: 0;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.3);
+      color: var(--success);
+      border-radius: var(--radius-sm);
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #copy-btn:hover { background: rgba(16,185,129,0.22); transform: scale(1.03); }
+    #copy-btn.copied {
+      background: rgba(16,185,129,0.25);
+      color: #34d399;
+    }
+    #copy-btn svg { width: 14px; height: 14px; }
+
+    /* ── History ─────────────────────────────────────────────────── */
+    .history-section { width: 100%; }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .history-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    #clear-history-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: color 0.2s;
+      padding: 2px 6px;
+    }
+    #clear-history-btn:hover { color: var(--error); }
+
+    #history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      animation: fadeIn 0.3s ease;
+      transition: border-color 0.2s;
+    }
+    .history-item:hover { border-color: rgba(139,92,246,0.35); }
+
+    .history-item-info { min-width: 0; flex: 1; }
+    .history-item-original {
+      font-size: 0.78rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 3px;
+    }
+    .history-item-short {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .history-item-short:hover { text-decoration: underline; }
+    .history-item-copy {
+      flex-shrink: 0;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .history-item-copy:hover { border-color: var(--primary); color: var(--primary2); }
+
+    .empty-history {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.875rem;
+      padding: 28px;
+      border: 1px dashed rgba(139,92,246,0.2);
+      border-radius: var(--radius-sm);
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────── */
+    footer {
+      position: relative;
+      z-index: 1;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: center;
+    }
+
+    /* ── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 520px) {
+      .input-row { flex-direction: column; }
+      #shorten-btn { width: 100%; justify-content: center; }
+      .card { padding: 24px 18px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Background -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <main class="page">
+
+    <!-- Header -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 0-10z"/></svg>
+        </div>
+        <span class="logo-text">SnapLink</span>
+      </div>
+      <h1>Shorten any URL<br/>in one click</h1>
+      <p class="subtitle">Paste your long URL below and get a clean, shareable short link instantly.</p>
+    </header>
+
+    <!-- Main card -->
+    <div class="card">
+      <label class="form-label" for="url-input">Enter your long URL</label>
+      <div class="input-row">
+        <input
+          id="url-input"
+          type="url"
+          placeholder="https://example.com/very/long/url/path..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button id="shorten-btn" onclick="shortenURL()">
+          <span class="btn-text">Shorten</span>
+          <span class="spinner"></span>
+        </button>
+      </div>
+      <p class="message empty" id="error-msg"></p>
+
+      <!-- Result -->
+      <div id="result-box">
+        <div>
+          <div class="result-label">✓ Your short link</div>
+          <a id="short-link" href="#" target="_blank" rel="noopener"></a>
+        </div>
+        <button id="copy-btn" onclick="copyLink()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span id="copy-label">Copy</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- History -->
+    <section class="history-section" id="history-section">
+      <div class="history-header">
+        <span class="history-title">Recent links</span>
+        <button id="clear-history-btn" onclick="clearHistory()">Clear all</button>
+      </div>
+      <div id="history-list"></div>
+    </section>
+
+  </main>
+
+  <footer>
+    &copy; 2026 SnapLink &mdash; URL Shortener
+  </footer>
+
+  <script>
+    const STORAGE_KEY = 'snaplink_history';
+
+    /* ── Helpers ────────────────────────────────────────────────── */
+    function getHistory() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+      catch { return []; }
+    }
+
+    function saveHistory(list) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+
+    function isValidURL(str) {
+      try { new URL(str); return true; }
+      catch { return false; }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.classList.remove('empty');
+      el.classList.add('error-msg');
+      document.getElementById('url-input').classList.add('error');
+    }
+
+    function clearError() {
+      const el = document.getElementById('error-msg');
+      el.textContent = '';
+      el.classList.add('empty');
+      el.classList.remove('error-msg');
+      document.getElementById('url-input').classList.remove('error');
+    }
+
+    function setLoading(on) {
+      const btn = document.getElementById('shorten-btn');
+      btn.disabled = on;
+      btn.classList.toggle('loading', on);
+    }
+
+    /* ── Shorten ────────────────────────────────────────────────── */
+    async function shortenURL() {
+      const input = document.getElementById('url-input');
+      const raw = input.value.trim();
+
+      clearError();
+      document.getElementById('result-box').classList.remove('visible');
+
+      if (!raw) { showError('Please enter a URL.'); return; }
+      if (!isValidURL(raw)) { showError('That doesn\'t look like a valid URL. Make sure it starts with http:// or https://'); return; }
+
+      setLoading(true);
+      try {
+        const resp = await fetch('/shorten', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: raw })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || `Server error (${resp.status})`);
+        }
+
+        const data = await resp.json();
+        const shortUrl = data.short_url;
+
+        // Show result
+        const linkEl = document.getElementById('short-link');
+        linkEl.href = shortUrl;
+        linkEl.textContent = shortUrl;
+        document.getElementById('result-box').classList.add('visible');
+
+        // Reset copy button
+        const copyBtn = document.getElementById('copy-btn');
+        copyBtn.classList.remove('copied');
+        document.getElementById('copy-label').textContent = 'Copy';
+
+        // Save to history
+        const history = getHistory();
+        history.unshift({ original: raw, short: shortUrl, ts: Date.now() });
+        saveHistory(history.slice(0, 20)); // keep latest 20
+        renderHistory();
+
+        input.value = '';
+      } catch (e) {
+        showError(e.message || 'Something went wrong. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    /* ── Copy ───────────────────────────────────────────────────── */
+    async function copyLink() {
+      const url = document.getElementById('short-link').href;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // fallback
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      const btn = document.getElementById('copy-btn');
+      btn.classList.add('copied');
+      document.getElementById('copy-label').textContent = 'Copied!';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        document.getElementById('copy-label').textContent = 'Copy';
+      }, 2000);
+    }
+
+    async function copyHistoryLink(url) {
+      try { await navigator.clipboard.writeText(url); }
+      catch {
+        const ta = document.createElement('textarea');
+        ta.value = url; document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+      }
+    }
+
+    /* ── History ────────────────────────────────────────────────── */
+    function renderHistory() {
+      const list = getHistory();
+      const container = document.getElementById('history-list');
+      const section = document.getElementById('history-section');
+
+      if (!list.length) {
+        container.innerHTML = '<div class="empty-history">No links yet &mdash; shorten your first URL above!</div>';
+        document.getElementById('clear-history-btn').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('clear-history-btn').style.display = '';
+      container.innerHTML = list.map((item, i) => `
+        <div class="history-item">
+          <div class="history-item-info">
+            <div class="history-item-original">${escapeHtml(item.original)}</div>
+            <a class="history-item-short" href="${escapeHtml(item.short)}" target="_blank" rel="noopener">${escapeHtml(item.short)}</a>
+          </div>
+          <button class="history-item-copy" onclick="copyHistoryItem(${i})">Copy</button>
+        </div>
+      `).join('');
+    }
+
+    function copyHistoryItem(idx) {
+      const list = getHistory();
+      if (!list[idx]) return;
+      copyHistoryLink(list[idx].short);
+      const btns = document.querySelectorAll('.history-item-copy');
+      if (btns[idx]) {
+        btns[idx].textContent = 'Copied!';
+        setTimeout(() => { if (btns[idx]) btns[idx].textContent = 'Copy'; }, 2000);
+      }
+    }
+
+    function clearHistory() {
+      saveHistory([]);
+      renderHistory();
+      document.getElementById('result-box').classList.remove('visible');
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ── Enter key ──────────────────────────────────────────────── */
+    document.getElementById('url-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') shortenURL();
+    });
+
+    /* ── Init ───────────────────────────────────────────────────── */
+    renderHistory();
+  </script>
+</body>
+</html>

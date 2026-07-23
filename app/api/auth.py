@@ -8,7 +8,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path as ApiPath, Query, Request, UploadFile, status
-from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -137,10 +137,6 @@ class LinkPage(BaseModel):
     page_size: int
     total: int
     total_pages: int
-
-
-class LinkUpdate(BaseModel):
-    url: HttpUrl
 
 
 class AccountOverview(BaseModel):
@@ -477,24 +473,6 @@ def account_links(
         total=total,
         total_pages=max(1, (total + page_size - 1) // page_size),
     )
-
-
-@router.patch("/account/links/{short_code}", response_model=DashboardLink)
-def update_account_link(
-    data: LinkUpdate,
-    short_code: Annotated[
-        str,
-        ApiPath(min_length=6, max_length=32, pattern=r"^[A-Za-z0-9]+$"),
-    ],
-    user: Annotated[User, Depends(get_current_user)],
-    db: Session = Depends(get_db),
-) -> DashboardLink:
-    url = _owned_link_or_404(db, user, short_code)
-    url.original_url = str(data.url)
-    db.commit()
-    db.refresh(url)
-    invalidate_cached_url(url.short_code)
-    return _link_response(url)
 
 
 @router.delete("/account/links/{short_code}", status_code=status.HTTP_204_NO_CONTENT)

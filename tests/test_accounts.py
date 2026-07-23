@@ -61,12 +61,6 @@ async def test_account_owns_only_its_links(client, monkeypatch):
     assert (await client.get("/account/links")).json()["items"] == []
 
     first_code = first_short_url.rsplit("/", 1)[1]
-    assert (
-        await client.patch(
-            f"/account/links/{first_code}",
-            json={"url": "https://example.com/not-allowed"},
-        )
-    ).status_code == 404
     assert (await client.delete(f"/account/links/{first_code}")).status_code == 404
 
     # Sharing a short URL still works; the dashboard ownership is private.
@@ -224,7 +218,7 @@ async def test_profile_photo_can_be_uploaded_and_removed(client):
 
 
 @pytest.mark.anyio
-async def test_dashboard_link_crud_and_pagination(client):
+async def test_dashboard_link_creation_deletion_and_pagination(client):
     registration = {
         "first_name": "Dorothy",
         "last_name": "Vaughan",
@@ -250,14 +244,6 @@ async def test_dashboard_link_crud_and_pagination(client):
     assert first_page.json()["total_pages"] == 2
     assert len(first_page.json()["items"]) == 2
 
-    target = created[0]
-    updated = await client.patch(
-        f"/account/links/{target['short_code']}",
-        json={"url": "https://example.com/updated"},
-    )
-    assert updated.status_code == 200
-    assert updated.json()["original_url"] == "https://example.com/updated"
-
-    deleted = await client.delete(f"/account/links/{target['short_code']}")
+    deleted = await client.delete(f"/account/links/{created[0]['short_code']}")
     assert deleted.status_code == 204
     assert (await client.get("/account/links")).json()["total"] == 2

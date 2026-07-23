@@ -46,6 +46,7 @@ class User(Base):
     last_name = Column(String(100), nullable=False, server_default="")
     username = Column(String(30), unique=True, index=True, nullable=False)
     email = Column(String(320), unique=True, index=True, nullable=False)
+    avatar_filename = Column(String(64), nullable=True)
     password_hash = Column(String(256), nullable=False)
     plan = Column(
         String(16),

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +22,12 @@ from app.utils.db_connection import get_db
 router = APIRouter(tags=["accounts"])
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _DUMMY_PASSWORD_HASH = hash_password("snaplink-not-a-real-password")
+_AVATAR_DIRECTORY = Path(__file__).resolve().parents[2] / "static" / "uploads" / "avatars"
+_MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_AVATAR_TYPES = {
+    "image/jpeg": (".jpg", b"\xff\xd8\xff"),
+    "image/png": (".png", b"\x89PNG\r\n\x1a\n"),
+}
 
 
 class LoginCredentials(BaseModel):
@@ -110,6 +118,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     plan: AccountPlan
+    avatar_url: str | None
 
 
 class DashboardLink(BaseModel):
@@ -144,7 +153,39 @@ def _response(user: User) -> UserResponse:
         username=user.username,
         email=user.email,
         plan=AccountPlan(user.plan),
+        avatar_url=_avatar_url(user),
     )
+
+
+def _avatar_url(user: User) -> str | None:
+    if not user.avatar_filename:
+        return None
+    base_url = get_settings().public_base_url.rstrip("/")
+    return f"{base_url}/static/uploads/avatars/{user.avatar_filename}"
+
+
+def _avatar_extension(content_type: str | None, content: bytes) -> str | None:
+    if content_type in _AVATAR_TYPES:
+        extension, signature = _AVATAR_TYPES[content_type]
+        if content.startswith(signature):
+            return extension
+    if (
+        content_type == "image/webp"
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP"
+    ):
+        return ".webp"
+    return None
+
+
+def _remove_avatar(filename: str | None) -> None:
+    if not filename or Path(filename).name != filename:
+        return
+    try:
+        (_AVATAR_DIRECTORY / filename).unlink(missing_ok=True)
+    except OSError:
+        # A stale local file should never make an account update fail.
+        pass
 
 
 def _client_id(request: Request) -> str:
@@ -271,6 +312,56 @@ def update_profile(
             detail="This username is already taken",
         ) from exc
     return _response(user)
+
+
+@router.post("/account/avatar", response_model=UserResponse)
+async def upload_avatar(
+    photo: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    content = await photo.read(_MAX_AVATAR_BYTES + 1)
+    await photo.close()
+    if len(content) > _MAX_AVATAR_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Profile photo must be 2 MB or smaller",
+        )
+    extension = _avatar_extension(photo.content_type, content)
+    if extension is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Use a PNG, JPEG, or WebP image for your profile photo",
+        )
+
+    _AVATAR_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{extension}"
+    destination = _AVATAR_DIRECTORY / filename
+    destination.write_bytes(content)
+    previous_filename = user.avatar_filename
+    try:
+        user.avatar_filename = filename
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        _remove_avatar(filename)
+        raise
+    _remove_avatar(previous_filename)
+    return _response(user)
+
+
+@router.delete("/account/avatar", status_code=status.HTTP_204_NO_CONTENT)
+def delete_avatar(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> None:
+    previous_filename = user.avatar_filename
+    if previous_filename is None:
+        return
+    user.avatar_filename = None
+    db.commit()
+    _remove_avatar(previous_filename)
 
 
 @router.post("/account/change-password", status_code=status.HTTP_204_NO_CONTENT)

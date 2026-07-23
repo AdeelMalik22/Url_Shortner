@@ -34,3 +34,7 @@ dist/
 # Logs and operating-system files
 *.log
 .DS_Store
+
+# Locally stored profile photos (use object storage in production)
+static/uploads/avatars/*
+!static/uploads/avatars/.gitkeep

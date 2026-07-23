@@ -1,4 +1,5 @@
 import pytest
+from urllib.parse import urlsplit
 
 from app.api import auth
 from app.config import get_settings
@@ -171,3 +172,37 @@ async def test_profile_and_password_can_be_updated(client):
         json={"email": "grace@example.com", "password": "a-brand-new-strong-password"},
     )
     assert login.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_profile_photo_can_be_uploaded_and_removed(client):
+    registration = {
+        "first_name": "Katherine",
+        "last_name": "Johnson",
+        "username": "katherine_johnson",
+        "email": "katherine@example.com",
+        "password": "correct-horse-battery",
+        "confirm_password": "correct-horse-battery",
+    }
+    assert (await client.post("/auth/register", json=registration)).status_code == 201
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+        b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+        b"\x00\x00\x00\x0dIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d"
+        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    uploaded = await client.post(
+        "/account/avatar",
+        files={"photo": ("avatar.png", png, "image/png")},
+    )
+    assert uploaded.status_code == 200
+    avatar_url = uploaded.json()["avatar_url"]
+    assert avatar_url is not None
+
+    asset = await client.get(urlsplit(avatar_url).path)
+    assert asset.status_code == 200
+    assert asset.content == png
+
+    removed = await client.delete("/account/avatar")
+    assert removed.status_code == 204
+    assert (await client.get("/account/profile")).json()["avatar_url"] is None

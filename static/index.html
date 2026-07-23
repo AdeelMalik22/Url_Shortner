@@ -30,7 +30,7 @@
   <div class="shell">
     <nav>
       <a class="brand" href="/"><span class="mark">↗</span>SnapLink</a>
-      <div class="nav-actions"><a class="nav-link" id="account-link" href="/login">Sign in</a><button class="signout" id="signout-button" type="button" hidden>Sign out</button></div>
+      <div class="nav-actions"><a class="nav-link" id="account-link" href="/login">Sign in</a><a class="nav-link" id="settings-link" href="/settings" hidden>Settings</a><button class="signout" id="signout-button" type="button" hidden>Sign out</button></div>
     </nav>
     <main>
       <section class="hero">
@@ -56,6 +56,7 @@
     const result = document.getElementById('result');
     const shortLink = document.getElementById('short-link');
     const accountLink = document.getElementById('account-link');
+    const settingsLink = document.getElementById('settings-link');
     const signoutButton = document.getElementById('signout-button');
 
     function escapeHtml(value) { return String(value).replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char])); }
@@ -128,7 +129,7 @@
         signoutButton.disabled = false;
       }
     });
-    (async () => { const response = await fetch('/auth/me'); if (response.ok) { const user = await response.json(); accountLink.textContent = 'My dashboard'; accountLink.href = '#dashboard'; signoutButton.hidden = false; document.getElementById('account-cta').style.display = 'none'; loadLinks(); } })();
+    (async () => { const response = await fetch('/auth/me'); if (response.ok) { const user = await response.json(); accountLink.textContent = 'My dashboard'; accountLink.href = '#dashboard'; settingsLink.hidden = false; signoutButton.hidden = false; document.getElementById('account-cta').style.display = 'none'; loadLinks(); } })();
   </script>
 </body>
 </html>

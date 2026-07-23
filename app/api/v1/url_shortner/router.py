@@ -40,6 +40,12 @@ def account_page() -> FileResponse:
     return FileResponse("static/auth.html")
 
 
+@router.get("/settings", include_in_schema=False)
+def settings_page() -> FileResponse:
+    """Reserve settings so it can never be interpreted as a short code."""
+    return FileResponse("static/settings.html")
+
+
 @router.post("/shorten", response_model=URLResponse)
 def shorten(
     data: URLCreate,

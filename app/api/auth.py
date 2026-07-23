@@ -66,6 +66,42 @@ class RegistrationCredentials(LoginCredentials):
         return self
 
 
+class ProfileUpdate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    username: str = Field(min_length=3, max_length=30)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        name = " ".join(value.split())
+        if not name or any(character.isdigit() for character in name):
+            raise ValueError("Enter a valid name")
+        return name
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        username = value.strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{2,29}", username):
+            raise ValueError(
+                "Username must start with a letter and use only letters, numbers, or underscores"
+            )
+        return username
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=12, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
+    confirm_password: str = Field(min_length=12, max_length=128)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> "PasswordChange":
+        if self.new_password != self.confirm_password:
+            raise ValueError("New passwords do not match")
+        return self
+
+
 class UserResponse(BaseModel):
     id: int
     first_name: str
@@ -200,6 +236,57 @@ def logout(request: Request) -> None:
 @router.get("/auth/me", response_model=UserResponse)
 def me(user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
     return _response(user)
+
+
+@router.get("/account/profile", response_model=UserResponse)
+def profile(user: Annotated[User, Depends(get_current_user)]) -> UserResponse:
+    return _response(user)
+
+
+@router.patch("/account/profile", response_model=UserResponse)
+def update_profile(
+    data: ProfileUpdate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    username_owner = db.scalar(
+        select(User.id).where(User.username == data.username).where(User.id != user.id)
+    )
+    if username_owner is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This username is already taken",
+        )
+    user.first_name = data.first_name
+    user.last_name = data.last_name
+    user.username = data.username
+    try:
+        db.commit()
+        db.refresh(user)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This username is already taken",
+        ) from exc
+    return _response(user)
+
+
+@router.post("/account/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    data: PasswordChange,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> None:
+    _enforce_auth_rate_limit(request)
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    user.password_hash = hash_password(data.new_password)
+    db.commit()
 
 
 @router.get("/account/links", response_model=list[DashboardLink])

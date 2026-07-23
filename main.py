@@ -56,6 +56,10 @@ def create_app() -> FastAPI:
         """Serve a focused account page instead of putting auth in the shortener."""
         return FileResponse("static/auth.html")
 
+    @application.get("/settings", include_in_schema=False, response_class=FileResponse)
+    def settings_page():
+        return FileResponse("static/settings.html")
+
     application.include_router(url_shortener_router)
 
     return application

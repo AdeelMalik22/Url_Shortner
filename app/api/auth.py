@@ -6,7 +6,7 @@ import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _DUMMY_PASSWORD_HASH = hash_password("snaplink-not-a-real-password")
 
 
-class Credentials(BaseModel):
+class LoginCredentials(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(min_length=12, max_length=128)
 
@@ -35,8 +35,42 @@ class Credentials(BaseModel):
         return email
 
 
+class RegistrationCredentials(LoginCredentials):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    username: str = Field(min_length=3, max_length=30)
+    confirm_password: str = Field(min_length=12, max_length=128)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        name = " ".join(value.split())
+        if not name or any(character.isdigit() for character in name):
+            raise ValueError("Enter a valid name")
+        return name
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        username = value.strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{2,29}", username):
+            raise ValueError(
+                "Username must start with a letter and use only letters, numbers, or underscores"
+            )
+        return username
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> "RegistrationCredentials":
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
 class UserResponse(BaseModel):
     id: int
+    first_name: str
+    last_name: str
+    username: str
     email: str
     plan: AccountPlan
 
@@ -68,6 +102,9 @@ def get_current_user(user: Annotated[User | None, Depends(get_optional_user)]) -
 def _response(user: User) -> UserResponse:
     return UserResponse(
         id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        username=user.username,
         email=user.email,
         plan=AccountPlan(user.plan),
     )
@@ -100,23 +137,51 @@ def _enforce_auth_rate_limit(request: Request) -> None:
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(credentials: Credentials, request: Request, db: Session = Depends(get_db)) -> UserResponse:
+def register(
+    credentials: RegistrationCredentials,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> UserResponse:
     _enforce_auth_rate_limit(request)
-    user = User(email=credentials.email, password_hash=hash_password(credentials.password))
+    if db.scalar(select(User.id).where(User.email == credentials.email)) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account already exists for this email",
+        )
+    if db.scalar(select(User.id).where(User.username == credentials.username)) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This username is already taken",
+        )
+
+    user = User(
+        first_name=credentials.first_name,
+        last_name=credentials.last_name,
+        username=credentials.username,
+        email=credentials.email,
+        password_hash=hash_password(credentials.password),
+    )
     try:
         db.add(user)
         db.commit()
         db.refresh(user)
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists for this email") from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email address or username is already in use",
+        ) from exc
     request.session.clear()
     request.session["user_id"] = user.id
     return _response(user)
 
 
 @router.post("/auth/login", response_model=UserResponse)
-def login(credentials: Credentials, request: Request, db: Session = Depends(get_db)) -> UserResponse:
+def login(
+    credentials: LoginCredentials,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> UserResponse:
     _enforce_auth_rate_limit(request)
     user = db.scalar(select(User).where(User.email == credentials.email))
     password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH

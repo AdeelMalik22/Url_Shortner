@@ -12,10 +12,18 @@ async def test_account_owns_only_its_links(client, monkeypatch):
 
     first = await client.post(
         "/auth/register",
-        json={"email": "first@example.com", "password": "correct-horse-battery"},
+        json={
+            "first_name": "First",
+            "last_name": "Person",
+            "username": "first_person",
+            "email": "first@example.com",
+            "password": "correct-horse-battery",
+            "confirm_password": "correct-horse-battery",
+        },
     )
     assert first.status_code == 201
     assert first.json()["plan"] == "free"
+    assert first.json()["username"] == "first_person"
 
     created = await client.post("/shorten", json={"url": "https://example.com/private"})
     assert created.status_code == 200
@@ -36,7 +44,14 @@ async def test_account_owns_only_its_links(client, monkeypatch):
     assert (await client.post("/auth/logout")).status_code == 204
     second = await client.post(
         "/auth/register",
-        json={"email": "second@example.com", "password": "another-correct-password"},
+        json={
+            "first_name": "Second",
+            "last_name": "Person",
+            "username": "second_person",
+            "email": "second@example.com",
+            "password": "another-correct-password",
+            "confirm_password": "another-correct-password",
+        },
     )
     assert second.status_code == 201
     assert (await client.get("/account/links")).json() == []
@@ -92,3 +107,25 @@ async def test_auth_attempts_are_rate_limited(client, monkeypatch):
 
     assert response.status_code == 429
     assert response.headers["retry-after"] == "60"
+
+
+@pytest.mark.anyio
+async def test_username_is_normalized_and_unique(client):
+    payload = {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "username": "Ada_Lovelace",
+        "email": "ada@example.com",
+        "password": "correct-horse-battery",
+        "confirm_password": "correct-horse-battery",
+    }
+    created = await client.post("/auth/register", json=payload)
+    assert created.status_code == 201
+    assert created.json()["username"] == "ada_lovelace"
+
+    duplicate = await client.post(
+        "/auth/register",
+        json={**payload, "email": "other@example.com", "username": "ADA_LOVELACE"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "This username is already taken"

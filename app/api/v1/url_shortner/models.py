@@ -42,6 +42,9 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    first_name = Column(String(100), nullable=False, server_default="")
+    last_name = Column(String(100), nullable=False, server_default="")
+    username = Column(String(30), unique=True, index=True, nullable=False)
     email = Column(String(320), unique=True, index=True, nullable=False)
     password_hash = Column(String(256), nullable=False)
     plan = Column(

@@ -18,7 +18,7 @@
     .shortener { max-width:790px; margin:42px auto 0; padding:10px; display:flex; gap:10px; border:1px solid var(--line); border-radius:15px; box-shadow:0 18px 45px rgba(24,55,95,.10); background:#fff; } input { min-width:0; flex:1; border:0; outline:0; padding:13px 16px; color:var(--ink); font:inherit; font-size:1rem; } input::placeholder { color:#94a3b8; }
     button,.button { border:0; border-radius:9px; padding:14px 22px; cursor:pointer; font:600 .98rem inherit; text-decoration:none; transition:background .15s,transform .15s; } .primary { color:#fff; background:var(--blue); } .primary:hover { background:var(--blue-dark); transform:translateY(-1px); } button:disabled { opacity:.65; cursor:wait; transform:none; }
     .under-form { display:flex; justify-content:center; gap:18px; margin-top:15px; color:var(--muted); font-size:.88rem; } .under-form span::before { content:"✓"; margin-right:6px; color:var(--green); font-weight:700; }
-    #result { display:none; max-width:790px; margin:18px auto 0; border:1px solid #b9e5d3; border-radius:12px; padding:18px 20px; background:#f1fbf7; align-items:center; justify-content:space-between; gap:16px; } #result.show { display:flex; } .result-label { color:var(--green); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; } #short-link { display:inline-block; margin-top:4px; color:var(--blue); font-weight:600; text-decoration:none; word-break:break-all; } .copy { flex:none; color:var(--green); background:#fff; border:1px solid #b9e5d3; }
+    #result { display:none; max-width:790px; margin:18px auto 0; border:1px solid #b9e5d3; border-radius:12px; padding:18px 20px; background:#f1fbf7; align-items:center; justify-content:space-between; gap:16px; } #result.show { display:flex; } .result-label { color:var(--green); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; } #short-link { display:inline-block; margin-top:4px; color:var(--blue); font-weight:600; text-decoration:none; word-break:break-all; } .copy { flex:none; color:var(--green); background:#fff; border:1px solid #b9e5d3; } .copy.copied { color:#fff; background:var(--green); border-color:var(--green); }
     .feature-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; max-width:950px; margin:100px auto 0; } .feature { padding:4px 22px; border-left:2px solid #d7e6fb; } .feature h2 { margin:0 0 7px; font-size:1rem; } .feature p { margin:0; color:var(--muted); font-size:.94rem; line-height:1.5; }
     .account-cta { display:flex; align-items:center; justify-content:space-between; gap:30px; max-width:950px; margin:78px auto 0; padding:37px 42px; border-radius:18px; color:#fff; background:#142d50; } .account-cta h2 { margin:0 0 8px; font-size:1.55rem; } .account-cta p { margin:0; color:#c9d7e9; line-height:1.5; } .account-cta .button { flex:none; color:var(--ink); background:#fff; }
     #dashboard { display:none; max-width:790px; margin:60px auto 0; } #dashboard.show { display:block; } #dashboard h2 { margin:0 0 5px; font-size:1.3rem; } #dashboard > p { margin:0 0 18px; color:var(--muted); } .link-row { display:flex; justify-content:space-between; gap:15px; padding:14px 0; border-top:1px solid var(--line); } .link-row div { min-width:0; } .destination { overflow:hidden; color:var(--muted); font-size:.85rem; text-overflow:ellipsis; white-space:nowrap; } .link-row a { color:var(--blue); font-weight:600; text-decoration:none; }
@@ -63,9 +63,43 @@
       if (!response.ok) return;
       const links = await response.json();
       document.getElementById('dashboard').classList.add('show');
-      document.getElementById('link-list').innerHTML = links.length ? links.map(link => `<div class="link-row"><div><a href="${escapeHtml(link.short_url)}" target="_blank" rel="noopener">${escapeHtml(link.short_url)}</a><div class="destination">${escapeHtml(link.original_url)}</div></div><button class="copy" type="button" onclick="copyText('${escapeHtml(link.short_url)}')">Copy</button></div>`).join('') : '<p>No saved links yet.</p>';
+      document.getElementById('link-list').innerHTML = links.length ? links.map(link => `<div class="link-row"><div><a href="${escapeHtml(link.short_url)}" target="_blank" rel="noopener">${escapeHtml(link.short_url)}</a><div class="destination">${escapeHtml(link.original_url)}</div></div><button class="copy" type="button" data-copy="${escapeHtml(link.short_url)}">Copy</button></div>`).join('') : '<p>No saved links yet.</p>';
     }
-    async function copyText(value) { await navigator.clipboard.writeText(value); }
+    async function copyText(value) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(value);
+          return;
+        }
+      } catch (_) {
+        // Clipboard permission can be denied even in a secure context.
+      }
+
+      const fallback = document.createElement('textarea');
+      fallback.value = value;
+      fallback.setAttribute('readonly', '');
+      fallback.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      document.body.appendChild(fallback);
+      fallback.select();
+      fallback.setSelectionRange(0, fallback.value.length);
+      const copied = document.execCommand('copy');
+      fallback.remove();
+      if (!copied) throw new Error('Your browser blocked clipboard access');
+    }
+    async function copyFromButton(copyButton, value) {
+      const label = copyButton.textContent;
+      try {
+        await copyText(value);
+        copyButton.textContent = 'Copied!';
+        copyButton.classList.add('copied');
+      } catch (_) {
+        copyButton.textContent = 'Copy failed';
+      }
+      window.setTimeout(() => {
+        copyButton.textContent = label;
+        copyButton.classList.remove('copied');
+      }, 1800);
+    }
     form.addEventListener('submit', async event => {
       event.preventDefault();
       button.disabled = true; button.textContent = 'Shortening…';
@@ -77,7 +111,13 @@
       } catch (error) { window.alert(error.message); }
       finally { button.disabled = false; button.textContent = 'Shorten link'; }
     });
-    document.getElementById('copy-button').addEventListener('click', () => copyText(shortLink.href));
+    document.getElementById('copy-button').addEventListener('click', event => {
+      copyFromButton(event.currentTarget, shortLink.textContent);
+    });
+    document.getElementById('link-list').addEventListener('click', event => {
+      const copyButton = event.target.closest('[data-copy]');
+      if (copyButton) copyFromButton(copyButton, copyButton.dataset.copy);
+    });
     (async () => { const response = await fetch('/auth/me'); if (response.ok) { const user = await response.json(); accountLink.textContent = 'My dashboard'; accountLink.href = '#dashboard'; document.getElementById('account-cta').style.display = 'none'; loadLinks(); } })();
   </script>
 </body>

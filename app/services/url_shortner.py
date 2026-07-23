@@ -14,6 +14,7 @@ class ShortCodeAllocationError(RuntimeError):
 def create_short_url(
     db: Session,
     original_url: str,
+    user_id: int | None = None,
 ) -> URL:
     settings = get_settings()
     last_collision: IntegrityError | None = None
@@ -23,6 +24,7 @@ def create_short_url(
         url = URL(
             short_code=code,
             original_url=original_url,
+            user_id=user_id,
         )
 
         try:

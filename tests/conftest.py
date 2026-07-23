@@ -13,10 +13,14 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["SHORT_CODE_LENGTH"] = "10"
 os.environ["SHORT_CODE_MAX_ATTEMPTS"] = "10"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["AUTH_REQUIRED"] = "false"
+os.environ["SESSION_SECRET"] = "test-session-secret-that-is-long-enough"
+os.environ["SESSION_COOKIE_SECURE"] = "false"
 os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
 
 
 from app.utils.db_connection import Base, engine  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from main import app  # noqa: E402
 
 
@@ -25,6 +29,13 @@ def clean_database():
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(autouse=True)
+def clear_settings_cache():
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)

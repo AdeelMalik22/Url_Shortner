@@ -171,6 +171,10 @@ class Settings:
     rate_limit_fail_open: bool
     short_code_length: int
     short_code_max_attempts: int
+    auth_required: bool
+    session_secret: str
+    session_cookie_secure: bool
+    session_max_age_seconds: int
     environment: str
 
 
@@ -218,5 +222,9 @@ def get_settings() -> Settings:
             maximum=32,
         ),
         short_code_max_attempts=_integer("SHORT_CODE_MAX_ATTEMPTS", 10),
+        auth_required=_boolean("AUTH_REQUIRED", True),
+        session_secret=_required("SESSION_SECRET"),
+        session_cookie_secure=_boolean("SESSION_COOKIE_SECURE", False),
+        session_max_age_seconds=_integer("SESSION_MAX_AGE_SECONDS", 604800),
         environment=_string("ENVIRONMENT", "development").lower(),
     )

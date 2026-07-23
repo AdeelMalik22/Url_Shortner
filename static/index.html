@@ -136,6 +136,13 @@
     .card:hover {
       box-shadow: 0 0 60px rgba(139,92,246,0.3), 0 24px 64px rgba(0,0,0,0.5);
     }
+    .auth-card { width: 100%; padding: 24px; }
+    .auth-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .auth-row input { flex: 1 1 190px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; color: var(--text); font: inherit; }
+    .auth-row button, #logout-btn { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; background: var(--primary); color: white; font: inherit; cursor: pointer; }
+    #login-btn, #logout-btn { background: transparent; color: var(--primary2); }
+    .account-bar { width: 100%; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: .9rem; }
+    [hidden] { display: none !important; }
 
     /* ── Form ────────────────────────────────────────────────────── */
     .form-label {
@@ -405,8 +412,23 @@
       <p class="subtitle">Paste your long URL below and get a clean, shareable short link instantly.</p>
     </header>
 
+    <div class="card auth-card" id="auth-card">
+      <label class="form-label" for="email-input">Create an account or sign in</label>
+      <div class="auth-row">
+        <input id="email-input" type="email" placeholder="you@example.com" autocomplete="email" />
+        <input id="password-input" type="password" placeholder="Password (12+ characters)" autocomplete="current-password" />
+        <button onclick="authenticate('register')">Create account</button>
+        <button id="login-btn" onclick="authenticate('login')">Sign in</button>
+      </div>
+      <p class="message empty" id="auth-msg"></p>
+    </div>
+
+    <div class="account-bar" id="account-bar" hidden>
+      <span id="account-email"></span><button id="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+
     <!-- Main card -->
-    <div class="card">
+    <div class="card" id="shorten-card" hidden>
       <label class="form-label" for="url-input">Enter your long URL</label>
       <div class="input-row">
         <input
@@ -438,10 +460,7 @@
 
     <!-- History -->
     <section class="history-section" id="history-section">
-      <div class="history-header">
-        <span class="history-title">Recent links</span>
-        <button id="clear-history-btn" onclick="clearHistory()">Clear all</button>
-      </div>
+      <div class="history-header"><span class="history-title">Your links</span></div>
       <div id="history-list"></div>
     </section>
 
@@ -452,17 +471,8 @@
   </footer>
 
   <script>
-    const STORAGE_KEY = 'snaplink_history';
-
-    /* ── Helpers ────────────────────────────────────────────────── */
-    function getHistory() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-      catch { return []; }
-    }
-
-    function saveHistory(list) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    }
+    /* ── Account and helpers ────────────────────────────────────── */
+    let dashboardLinks = [];
 
     function isValidURL(str) {
       try { new URL(str); return true; }
@@ -491,6 +501,48 @@
       btn.classList.toggle('loading', on);
     }
 
+    function showAuthMessage(message) {
+      const el = document.getElementById('auth-msg');
+      el.textContent = message;
+      el.classList.toggle('empty', !message);
+      el.classList.toggle('error-msg', Boolean(message));
+    }
+
+    async function authenticate(action) {
+      showAuthMessage('');
+      const email = document.getElementById('email-input').value.trim();
+      const password = document.getElementById('password-input').value;
+      try {
+        const resp = await fetch(`/auth/${action}`, { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.detail || 'Unable to sign in');
+        setSignedIn(data);
+        await loadDashboard();
+      } catch (error) { showAuthMessage(error.message || 'Unable to sign in'); }
+    }
+
+    function setSignedIn(user) {
+      document.getElementById('auth-card').hidden = Boolean(user);
+      document.getElementById('account-bar').hidden = !user;
+      document.getElementById('shorten-card').hidden = !user;
+      document.getElementById('history-section').hidden = !user;
+      if (user) document.getElementById('account-email').textContent = `Signed in as ${user.email}`;
+    }
+
+    async function logout() {
+      await fetch('/auth/logout', {method: 'POST', credentials: 'same-origin'});
+      document.getElementById('result-box').classList.remove('visible');
+      dashboardLinks = [];
+      setSignedIn(null);
+    }
+
+    async function loadDashboard() {
+      const resp = await fetch('/account/links', {credentials: 'same-origin'});
+      if (!resp.ok) { setSignedIn(null); return; }
+      dashboardLinks = await resp.json();
+      renderHistory();
+    }
+
     /* ── Shorten ────────────────────────────────────────────────── */
     async function shortenURL() {
       const input = document.getElementById('url-input');
@@ -507,7 +559,7 @@
         const resp = await fetch('/shorten', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: raw })
+          body: JSON.stringify({ url: raw }), credentials: 'same-origin'
         });
 
         if (!resp.ok) {
@@ -529,11 +581,7 @@
         copyBtn.classList.remove('copied');
         document.getElementById('copy-label').textContent = 'Copy';
 
-        // Save to history
-        const history = getHistory();
-        history.unshift({ original: raw, short: shortUrl, ts: Date.now() });
-        saveHistory(history.slice(0, 20)); // keep latest 20
-        renderHistory();
+        await loadDashboard();
 
         input.value = '';
       } catch (e) {
@@ -575,24 +623,20 @@
       }
     }
 
-    /* ── History ────────────────────────────────────────────────── */
+    /* ── Private dashboard ──────────────────────────────────────── */
     function renderHistory() {
-      const list = getHistory();
       const container = document.getElementById('history-list');
-      const section = document.getElementById('history-section');
 
-      if (!list.length) {
+      if (!dashboardLinks.length) {
         container.innerHTML = '<div class="empty-history">No links yet &mdash; shorten your first URL above!</div>';
-        document.getElementById('clear-history-btn').style.display = 'none';
         return;
       }
 
-      document.getElementById('clear-history-btn').style.display = '';
-      container.innerHTML = list.map((item, i) => `
+      container.innerHTML = dashboardLinks.map((item, i) => `
         <div class="history-item">
           <div class="history-item-info">
-            <div class="history-item-original">${escapeHtml(item.original)}</div>
-            <a class="history-item-short" href="${escapeHtml(item.short)}" target="_blank" rel="noopener">${escapeHtml(item.short)}</a>
+            <div class="history-item-original">${escapeHtml(item.original_url)}</div>
+            <a class="history-item-short" href="${escapeHtml(item.short_url)}" target="_blank" rel="noopener">${escapeHtml(item.short_url)}</a>
           </div>
           <button class="history-item-copy" onclick="copyHistoryItem(${i})">Copy</button>
         </div>
@@ -600,20 +644,13 @@
     }
 
     function copyHistoryItem(idx) {
-      const list = getHistory();
-      if (!list[idx]) return;
-      copyHistoryLink(list[idx].short);
+      if (!dashboardLinks[idx]) return;
+      copyHistoryLink(dashboardLinks[idx].short_url);
       const btns = document.querySelectorAll('.history-item-copy');
       if (btns[idx]) {
         btns[idx].textContent = 'Copied!';
         setTimeout(() => { if (btns[idx]) btns[idx].textContent = 'Copy'; }, 2000);
       }
-    }
-
-    function clearHistory() {
-      saveHistory([]);
-      renderHistory();
-      document.getElementById('result-box').classList.remove('visible');
     }
 
     function escapeHtml(str) {
@@ -626,7 +663,11 @@
     });
 
     /* ── Init ───────────────────────────────────────────────────── */
-    renderHistory();
+    (async () => {
+      const response = await fetch('/auth/me', {credentials: 'same-origin'});
+      if (response.ok) { setSignedIn(await response.json()); await loadDashboard(); }
+      else setSignedIn(null);
+    })();
   </script>
 </body>
 </html>

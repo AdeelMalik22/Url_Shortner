@@ -239,3 +239,19 @@ Short URLs are permanent in the current product contract. At one million new
 links per day, plan storage and index growth for roughly 365 million rows per
 year. If links should expire, define that behavior before adding a retention
 job; silently deleting live redirects is not a safe infrastructure default.
+# SnapLink URL Shortener
+
+## Accounts and link privacy
+
+Creating links now requires an account by default. Each signed-in user sees only
+their own links at the dashboard; the old browser-wide recent-links storage is
+not used. Existing links remain public redirects, so anyone with a short URL can
+open it.
+
+Set `SESSION_SECRET` to a long random value before deploying, and set
+`SESSION_COOKIE_SECURE=true` when serving the application over HTTPS. Run the
+latest database migration before starting a deployed application:
+
+```bash
+.venv/bin/python -m alembic upgrade head
+```

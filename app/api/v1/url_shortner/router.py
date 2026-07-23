@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from starlette import status
 from starlette.responses import RedirectResponse
 
-from app.api.v1.url_shortner.models import URL
+from app.api.auth import get_optional_user
+from app.api.v1.url_shortner.models import URL, User
 from app.api.v1.url_shortner.schema import URLCreate, URLResponse
 from app.config import get_settings
 from app.services.cache import (
@@ -38,8 +39,11 @@ def shorten(
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
 ) -> URLResponse:
     settings = get_settings()
+    if settings.auth_required and current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to shorten links")
     decision = check_rate_limit(_client_id(request), "shorten")
 
     rate_limit_headers = {}
@@ -68,7 +72,7 @@ def shorten(
         response.headers.update(rate_limit_headers)
 
     try:
-        url = create_short_url(db, str(data.url))
+        url = create_short_url(db, str(data.url), user_id=current_user.id if current_user else None)
     except ShortCodeAllocationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

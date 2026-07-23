@@ -3,7 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.auth import router as auth_router
+from app.config import get_settings
 from app.api.health import router as health_router
 from app.api.v1.url_shortner.router import router as url_shortener_router
 from app.observability import setup_observability
@@ -28,10 +31,19 @@ def create_app() -> FastAPI:
         title="SnapLink URL Shortener",
         lifespan=lifespan,
     )
+    settings = get_settings()
+    application.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret,
+        max_age=settings.session_max_age_seconds,
+        https_only=settings.session_cookie_secure,
+        same_site="lax",
+    )
 
     # Register fixed operational routes before the catch-all short-code route.
     setup_observability(application)
     application.include_router(health_router)
+    application.include_router(auth_router)
     application.mount("/static", StaticFiles(directory="static"), name="static")
     application.include_router(url_shortener_router)
 

@@ -46,6 +46,12 @@ def settings_page() -> FileResponse:
     return FileResponse("static/settings.html")
 
 
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    """Reserve the standard browser favicon path from short-code matching."""
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/shorten", response_model=URLResponse)
 def shorten(
     data: URLCreate,

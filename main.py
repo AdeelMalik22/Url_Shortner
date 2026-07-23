@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -59,6 +59,11 @@ def create_app() -> FastAPI:
     @application.get("/settings", include_in_schema=False, response_class=FileResponse)
     def settings_page():
         return FileResponse("static/settings.html")
+
+    @application.get("/favicon.ico", include_in_schema=False)
+    def favicon() -> Response:
+        """Avoid sending the browser's favicon request to the short-code route."""
+        return Response(status_code=204)
 
     application.include_router(url_shortener_router)
 

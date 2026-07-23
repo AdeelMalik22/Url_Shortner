@@ -57,6 +57,9 @@ async def test_operational_routes_are_not_captured_as_codes(
     assert metrics.status_code == 200
     assert "snaplink_http_requests_total" in metrics.text
 
+    favicon = await client.get("/favicon.ico")
+    assert favicon.status_code == 204
+
 
 async def test_readiness_degrades_when_optional_redis_is_down(
     client,

@@ -222,7 +222,7 @@ def get_settings() -> Settings:
             maximum=32,
         ),
         short_code_max_attempts=_integer("SHORT_CODE_MAX_ATTEMPTS", 10),
-        auth_required=_boolean("AUTH_REQUIRED", True),
+        auth_required=_boolean("AUTH_REQUIRED", False),
         session_secret=_required("SESSION_SECRET"),
         session_cookie_secure=_boolean("SESSION_COOKIE_SECURE", False),
         session_max_age_seconds=_integer("SESSION_MAX_AGE_SECONDS", 604800),

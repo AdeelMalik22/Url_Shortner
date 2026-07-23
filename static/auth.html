@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SnapLink account</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --ink:#13213a; --muted:#64748b; --line:#dbe3ee; --blue:#1769d1; --soft:#f4f8ff; } *{box-sizing:border-box} body{margin:0;background:var(--soft);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif}.layout{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}.aside{padding:48px max(48px,calc((100vw - 1120px)/2));background:#142d50;color:#fff}.brand{display:inline-flex;align-items:center;gap:10px;color:#fff;font-size:1.2rem;font-weight:700;text-decoration:none}.mark{width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:#2879dc}.aside-copy{max-width:410px;margin-top:23vh}.aside h1{font-size:clamp(2.2rem,4vw,3.4rem);line-height:1.1;letter-spacing:-.04em}.aside p{color:#c9d7e9;line-height:1.65}.content{display:grid;place-items:center;padding:40px}.card{width:min(410px,100%)}h2{font-size:2rem;letter-spacing:-.035em;margin:0 0 10px}.intro{margin:0 0 30px;color:var(--muted);line-height:1.55}label{display:block;margin:0 0 7px;font-size:.88rem;font-weight:600}input{width:100%;border:1px solid #cdd8e6;border-radius:8px;padding:14px;font:inherit;font-size:1rem;outline:0;margin-bottom:18px}input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #dcecff}button{width:100%;border:0;border-radius:8px;padding:14px;background:var(--blue);color:#fff;cursor:pointer;font:600 1rem inherit}.message{min-height:22px;margin:15px 0 0;color:#d33b50;font-size:.9rem}.switch{margin-top:24px;color:var(--muted);font-size:.93rem}.switch a{color:var(--blue);font-weight:600;text-decoration:none}@media(max-width:800px){.layout{grid-template-columns:1fr}.aside{display:none}.content{padding:30px 22px}}
+  </style>
+</head>
+<body>
+  <main class="layout"><aside class="aside"><a class="brand" href="/"><span class="mark">↗</span>SnapLink</a><div class="aside-copy"><h1>Links that stay organized.</h1><p>Shorten links without an account, then create one when you want a private place to manage them.</p></div></aside><section class="content"><div class="card"><a href="/" style="color:#1769d1;text-decoration:none;font-weight:600">← Back to SnapLink</a><h2 id="title" style="margin-top:38px"></h2><p class="intro" id="intro"></p><form id="auth-form"><label for="email">Email address</label><input id="email" type="email" autocomplete="email" required><label for="password">Password</label><input id="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required><button id="submit" type="submit"></button><p class="message" id="message"></p></form><p class="switch" id="switch"></p></div></section></main>
+  <script>
+    const creating = location.pathname === '/register';
+    document.title = creating ? 'Create your SnapLink account' : 'Sign in to SnapLink';
+    document.getElementById('title').textContent = creating ? 'Create your account' : 'Welcome back';
+    document.getElementById('intro').textContent = creating ? 'Save links to your private dashboard. It is free to get started.' : 'Sign in to access your private link dashboard.';
+    document.getElementById('submit').textContent = creating ? 'Create account' : 'Sign in';
+    document.getElementById('password').autocomplete = creating ? 'new-password' : 'current-password';
+    document.getElementById('switch').innerHTML = creating ? 'Already have an account? <a href="/login">Sign in</a>' : 'New to SnapLink? <a href="/register">Create a free account</a>';
+    document.getElementById('auth-form').addEventListener('submit', async event => { event.preventDefault(); const submit = document.getElementById('submit'); const message = document.getElementById('message'); submit.disabled = true; message.textContent = ''; try { const response = await fetch(creating ? '/auth/register' : '/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})}); const data = await response.json().catch(()=>({})); if(!response.ok) throw new Error(data.detail || 'Unable to continue.'); location.assign('/'); } catch(error) { message.textContent = error.message; submit.disabled = false; } });
+  </script>
+</body>
+</html>

@@ -243,9 +243,10 @@ job; silently deleting live redirects is not a safe infrastructure default.
 
 ## Accounts and link privacy
 
-Creating links now requires an account by default. Each signed-in user sees only
-their own links at the dashboard; the old browser-wide recent-links storage is
-not used. Existing links remain public redirects, so anyone with a short URL can
+Anyone can create a short link without an account. Accounts are optional and
+give a signed-in user a private dashboard containing only links created while
+they were signed in; the old browser-wide recent-links storage is not used.
+Existing short links remain public redirects, so anyone with a short URL can
 open it.
 
 Set `SESSION_SECRET` to a long random value before deploying, and set

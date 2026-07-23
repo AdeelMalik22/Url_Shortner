@@ -45,11 +45,18 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(auth_router)
     application.mount("/static", StaticFiles(directory="static"), name="static")
-    application.include_router(url_shortener_router)
 
     @application.get("/", response_class=FileResponse)
     def index():
         return FileResponse("static/index.html")
+
+    @application.get("/register", include_in_schema=False, response_class=FileResponse)
+    @application.get("/login", include_in_schema=False, response_class=FileResponse)
+    def account_entry():
+        """Serve a focused account page instead of putting auth in the shortener."""
+        return FileResponse("static/auth.html")
+
+    application.include_router(url_shortener_router)
 
     return application
 

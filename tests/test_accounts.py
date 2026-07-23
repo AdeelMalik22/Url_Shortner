@@ -44,3 +44,18 @@ async def test_shortening_requires_login_when_accounts_enabled(client, monkeypat
     response = await client.post("/shorten", json={"url": "https://example.com"})
     assert response.status_code == 401
 
+
+@pytest.mark.anyio
+async def test_anyone_can_shorten_when_accounts_are_optional(client, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "false")
+    get_settings.cache_clear()
+
+    response = await client.post("/shorten", json={"url": "https://example.com"})
+    assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_account_entry_serves_the_account_page(client):
+    response = await client.get("/register")
+    assert response.status_code == 200
+    assert "auth-form" in response.text

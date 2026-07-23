@@ -1,0 +1,142 @@
+x-app-environment: &app-environment
+  ENVIRONMENT: "${ENVIRONMENT:-development}"
+  PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:${APP_PORT:-8000}}"
+  WEB_CONCURRENCY: "${WEB_CONCURRENCY:-4}"
+  DATABASE_URL: ""
+  DATABASE_HOST: "db"
+  DATABASE_PORT: "5432"
+  DATABASE_USER: "${POSTGRES_USER:-snaplink}"
+  DATABASE_PASSWORD: "${POSTGRES_PASSWORD:-snaplink}"
+  DATABASE_NAME: "${POSTGRES_DB:-snaplink}"
+  DB_POOL_SIZE: "${DB_POOL_SIZE:-10}"
+  DB_MAX_OVERFLOW: "${DB_MAX_OVERFLOW:-20}"
+  DB_POOL_TIMEOUT: "${DB_POOL_TIMEOUT:-30}"
+  DB_POOL_RECYCLE: "${DB_POOL_RECYCLE:-1800}"
+  DB_CONNECT_TIMEOUT: "${DB_CONNECT_TIMEOUT:-2}"
+  DB_HEALTH_STATEMENT_TIMEOUT_MS: "${DB_HEALTH_STATEMENT_TIMEOUT_MS:-1000}"
+  REDIS_CACHE_URL: "redis://redis-cache:6379/0"
+  REDIS_RATE_LIMIT_URL: "redis://redis-rate-limit:6379/0"
+  REDIS_MAX_CONNECTIONS: "${REDIS_MAX_CONNECTIONS:-50}"
+  REDIS_CACHE_TTL: "${REDIS_CACHE_TTL:-86400}"
+  REDIS_NEGATIVE_CACHE_TTL: "${REDIS_NEGATIVE_CACHE_TTL:-60}"
+  REDIS_REQUIRED: "true"
+  RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+  RATE_LIMIT_REQUESTS: "${RATE_LIMIT_REQUESTS:-100}"
+  RATE_LIMIT_WINDOW_SECONDS: "${RATE_LIMIT_WINDOW_SECONDS:-60}"
+  RATE_LIMIT_FAIL_OPEN: "false"
+  SHORT_CODE_LENGTH: "${SHORT_CODE_LENGTH:-10}"
+  SHORT_CODE_MAX_ATTEMPTS: "${SHORT_CODE_MAX_ATTEMPTS:-10}"
+  FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+  PROMETHEUS_MULTIPROC_DIR: "/tmp/prometheus_multiproc"
+
+services:
+  db:
+    image: postgres:16-alpine
+    command:
+      [
+        "postgres",
+        "-c",
+        "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}",
+      ]
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-snaplink}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-snaplink}"
+      POSTGRES_DB: "${POSTGRES_DB:-snaplink}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis-cache:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "no",
+        "--maxmemory",
+        "${REDIS_CACHE_MAXMEMORY:-256mb}",
+        "--maxmemory-policy",
+        "${REDIS_CACHE_MAXMEMORY_POLICY:-volatile-lru}",
+      ]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis-rate-limit:
+    image: redis:7-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "${REDIS_RATE_LIMIT_MAXMEMORY:-128mb}",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    ports:
+      - "127.0.0.1:${REDIS_RATE_LIMIT_PORT:-6380}:6379"
+    volumes:
+      - redis-rate-limit-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+    init: true
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-rate-limit:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-rate-limit-data:

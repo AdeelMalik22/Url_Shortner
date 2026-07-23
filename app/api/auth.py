@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path as ApiPath, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -137,6 +137,7 @@ class LinkPage(BaseModel):
     page_size: int
     total: int
     total_pages: int
+    query: str
 
 
 class AccountOverview(BaseModel):
@@ -454,14 +455,25 @@ def account_links(
     db: Session = Depends(get_db),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    q: str = Query(default="", max_length=200),
 ) -> LinkPage:
+    query = q.strip()
+    filters = [URL.user_id == user.id]
+    if query:
+        match = f"%{query}%"
+        filters.append(
+            or_(
+                URL.short_code.ilike(match),
+                URL.original_url.ilike(match),
+            )
+        )
     total = int(
-        db.scalar(select(func.count()).select_from(URL).where(URL.user_id == user.id))
+        db.scalar(select(func.count()).select_from(URL).where(*filters))
         or 0
     )
     urls = db.scalars(
         select(URL)
-        .where(URL.user_id == user.id)
+        .where(*filters)
         .order_by(URL.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -472,6 +484,7 @@ def account_links(
         page_size=page_size,
         total=total,
         total_pages=max(1, (total + page_size - 1) // page_size),
+        query=query,
     )
 
 

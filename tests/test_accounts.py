@@ -244,6 +244,12 @@ async def test_dashboard_link_creation_deletion_and_pagination(client):
     assert first_page.json()["total_pages"] == 2
     assert len(first_page.json()["items"]) == 2
 
+    filtered = await client.get("/account/links?q=LINK-1")
+    assert filtered.status_code == 200
+    assert filtered.json()["query"] == "LINK-1"
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["original_url"] == "https://example.com/link-1"
+
     deleted = await client.delete(f"/account/links/{created[0]['short_code']}")
     assert deleted.status_code == 204
     assert (await client.get("/account/links")).json()["total"] == 2

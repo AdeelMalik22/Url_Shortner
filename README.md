@@ -256,3 +256,17 @@ latest database migration before starting a deployed application:
 ```bash
 .venv/bin/python -m alembic upgrade head
 ```
+
+Account API endpoints are session-cookie based:
+
+- `POST /auth/register` creates a `free` account and starts a session.
+- `POST /auth/login` starts a session.
+- `POST /auth/logout` ends the session.
+- `GET /auth/me` returns the signed-in account and its plan.
+- `GET /account/links` returns only links owned by that account.
+- `GET /account/overview` returns the plan, saved-link count, and enabled features.
+
+Account login and registration have a separate, tighter rate limit. The plan
+field supports `free` and `premium`; it defaults to `free` and cannot be
+promoted by a public endpoint. Connect a payment provider/webhook before
+enabling real premium upgrades.

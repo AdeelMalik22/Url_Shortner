@@ -7,17 +7,19 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.url_shortner.models import URL, User
+from app.api.v1.url_shortner.models import AccountPlan, URL, User
 from app.config import get_settings
 from app.services.auth import hash_password, verify_password
+from app.services.rate_limiter import check_rate_limit
 from app.utils.db_connection import get_db
 
 router = APIRouter(tags=["accounts"])
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_DUMMY_PASSWORD_HASH = hash_password("snaplink-not-a-real-password")
 
 
 class Credentials(BaseModel):
@@ -36,11 +38,18 @@ class Credentials(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    plan: AccountPlan
 
 
 class DashboardLink(BaseModel):
     original_url: str
     short_url: str
+
+
+class AccountOverview(BaseModel):
+    plan: AccountPlan
+    saved_link_count: int
+    features: list[str]
 
 
 def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
@@ -57,11 +66,42 @@ def get_current_user(user: Annotated[User | None, Depends(get_optional_user)]) -
 
 
 def _response(user: User) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        plan=AccountPlan(user.plan),
+    )
+
+
+def _client_id(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_auth_rate_limit(request: Request) -> None:
+    settings = get_settings()
+    decision = check_rate_limit(
+        _client_id(request),
+        "auth",
+        requests=settings.auth_rate_limit_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+    )
+    if not decision.available and not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable; please retry",
+            headers={"Retry-After": str(decision.retry_after)},
+        )
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many account attempts; please retry later",
+            headers={"Retry-After": str(decision.retry_after)},
+        )
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(credentials: Credentials, request: Request, db: Session = Depends(get_db)) -> UserResponse:
+    _enforce_auth_rate_limit(request)
     user = User(email=credentials.email, password_hash=hash_password(credentials.password))
     try:
         db.add(user)
@@ -77,8 +117,10 @@ def register(credentials: Credentials, request: Request, db: Session = Depends(g
 
 @router.post("/auth/login", response_model=UserResponse)
 def login(credentials: Credentials, request: Request, db: Session = Depends(get_db)) -> UserResponse:
+    _enforce_auth_rate_limit(request)
     user = db.scalar(select(User).where(User.email == credentials.email))
-    if user is None or not verify_password(credentials.password, user.password_hash):
+    password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+    if user is None or not verify_password(credentials.password, password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     request.session.clear()
     request.session["user_id"] = user.id
@@ -108,3 +150,21 @@ def account_links(
         DashboardLink(original_url=url.original_url, short_url=f"{base_url}/{url.short_code}")
         for url in urls
     ]
+
+
+@router.get("/account/overview", response_model=AccountOverview)
+def account_overview(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> AccountOverview:
+    saved_link_count = db.scalar(
+        select(func.count()).select_from(URL).where(URL.user_id == user.id)
+    )
+    features = ["Private link dashboard"]
+    if user.plan == AccountPlan.PREMIUM.value:
+        features.extend(["Custom short links", "Detailed analytics", "API access"])
+    return AccountOverview(
+        plan=AccountPlan(user.plan),
+        saved_link_count=int(saved_link_count or 0),
+        features=features,
+    )

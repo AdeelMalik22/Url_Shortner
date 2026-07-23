@@ -172,6 +172,8 @@ class Settings:
     short_code_length: int
     short_code_max_attempts: int
     auth_required: bool
+    auth_rate_limit_requests: int
+    auth_rate_limit_window_seconds: int
     session_secret: str
     session_cookie_secure: bool
     session_max_age_seconds: int
@@ -223,6 +225,12 @@ def get_settings() -> Settings:
         ),
         short_code_max_attempts=_integer("SHORT_CODE_MAX_ATTEMPTS", 10),
         auth_required=_boolean("AUTH_REQUIRED", False),
+        auth_rate_limit_requests=_integer(
+            "AUTH_RATE_LIMIT_REQUESTS", 10, minimum=1
+        ),
+        auth_rate_limit_window_seconds=_integer(
+            "AUTH_RATE_LIMIT_WINDOW_SECONDS", 300, minimum=1
+        ),
         session_secret=_required("SESSION_SECRET"),
         session_cookie_secure=_boolean("SESSION_COOKIE_SECURE", False),
         session_max_age_seconds=_integer("SESSION_MAX_AGE_SECONDS", 604800),

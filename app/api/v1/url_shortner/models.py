@@ -1,6 +1,13 @@
+from enum import Enum
+
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, func
 
 from app.utils.db_connection import Base
+
+
+class AccountPlan(str, Enum):
+    FREE = "free"
+    PREMIUM = "premium"
 
 
 class URL(Base):
@@ -37,4 +44,10 @@ class User(Base):
     id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
     email = Column(String(320), unique=True, index=True, nullable=False)
     password_hash = Column(String(256), nullable=False)
+    plan = Column(
+        String(16),
+        nullable=False,
+        default=AccountPlan.FREE.value,
+        server_default=AccountPlan.FREE.value,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

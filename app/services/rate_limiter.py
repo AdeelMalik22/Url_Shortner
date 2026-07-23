@@ -132,12 +132,22 @@ def _unavailable_decision(
     )
 
 
-def check_rate_limit(client_id: str, endpoint: str) -> RateLimitDecision:
+def check_rate_limit(
+    client_id: str,
+    endpoint: str,
+    *,
+    requests: int | None = None,
+    window_seconds: int | None = None,
+) -> RateLimitDecision:
     """Atomically consume one request from a client's endpoint-specific limit."""
 
     settings = get_settings()
-    limit = int(settings.rate_limit_requests)
-    window = int(settings.rate_limit_window_seconds)
+    limit = requests if requests is not None else int(settings.rate_limit_requests)
+    window = (
+        window_seconds
+        if window_seconds is not None
+        else int(settings.rate_limit_window_seconds)
+    )
 
     if not settings.rate_limit_enabled:
         return RateLimitDecision(

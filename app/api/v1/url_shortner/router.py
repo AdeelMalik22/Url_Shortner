@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette import status
-from starlette.responses import RedirectResponse
+from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.auth import get_optional_user
 from app.api.v1.url_shortner.models import URL, User
@@ -31,6 +31,13 @@ def _client_id(request: Request) -> str:
     if request.client is None:
         return "unknown"
     return request.client.host
+
+
+@router.get("/register", include_in_schema=False)
+@router.get("/login", include_in_schema=False)
+def account_page() -> FileResponse:
+    """Reserve account paths so they can never be interpreted as short codes."""
+    return FileResponse("static/auth.html")
 
 
 @router.post("/shorten", response_model=URLResponse)

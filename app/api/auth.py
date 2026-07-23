@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path as ApiPath, Query, Request, UploadFile, status
@@ -223,6 +224,27 @@ def _owned_link_or_404(db: Session, user: User, short_code: str) -> URL:
     if url is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
     return url
+
+
+def _short_code_from_public_url(value: str) -> str | None:
+    """Return a short code when a user pastes one of this app's short URLs."""
+
+    parsed = urlsplit(value)
+    public_url = urlsplit(get_settings().public_base_url)
+    if (
+        not parsed.scheme
+        or not parsed.netloc
+        or parsed.scheme.lower() != public_url.scheme.lower()
+        or parsed.netloc.lower() != public_url.netloc.lower()
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+
+    candidate = parsed.path.strip("/")
+    if not re.fullmatch(r"[A-Za-z0-9]{6,32}", candidate):
+        return None
+    return candidate
 
 
 def _enforce_shortening_rate_limit(request: Request) -> None:
@@ -461,11 +483,15 @@ def account_links(
     filters = [URL.user_id == user.id]
     if query:
         match = f"%{query}%"
+        match_conditions = [
+            URL.short_code.ilike(match),
+            URL.original_url.ilike(match),
+        ]
+        pasted_short_code = _short_code_from_public_url(query)
+        if pasted_short_code:
+            match_conditions.append(URL.short_code == pasted_short_code)
         filters.append(
-            or_(
-                URL.short_code.ilike(match),
-                URL.original_url.ilike(match),
-            )
+            or_(*match_conditions)
         )
     total = int(
         db.scalar(select(func.count()).select_from(URL).where(*filters))

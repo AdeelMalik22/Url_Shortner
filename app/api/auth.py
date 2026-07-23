@@ -7,16 +7,19 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel, Field, field_validator, model_validator
+from fastapi import APIRouter, Depends, File, HTTPException, Path as ApiPath, Query, Request, UploadFile, status
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.url_shortner.models import AccountPlan, URL, User
+from app.api.v1.url_shortner.schema import URLCreate
 from app.config import get_settings
 from app.services.auth import hash_password, verify_password
+from app.services.cache import invalidate_cached_url
 from app.services.rate_limiter import check_rate_limit
+from app.services.url_shortner import ShortCodeAllocationError, create_short_url
 from app.utils.db_connection import get_db
 
 router = APIRouter(tags=["accounts"])
@@ -122,8 +125,22 @@ class UserResponse(BaseModel):
 
 
 class DashboardLink(BaseModel):
+    id: int
+    short_code: str
     original_url: str
     short_url: str
+
+
+class LinkPage(BaseModel):
+    items: list[DashboardLink]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
+class LinkUpdate(BaseModel):
+    url: HttpUrl
 
 
 class AccountOverview(BaseModel):
@@ -190,6 +207,41 @@ def _remove_avatar(filename: str | None) -> None:
 
 def _client_id(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+def _link_response(url: URL) -> DashboardLink:
+    base_url = get_settings().public_base_url.rstrip("/")
+    return DashboardLink(
+        id=url.id,
+        short_code=url.short_code,
+        original_url=url.original_url,
+        short_url=f"{base_url}/{url.short_code}",
+    )
+
+
+def _owned_link_or_404(db: Session, user: User, short_code: str) -> URL:
+    url = db.scalar(
+        select(URL).where(URL.short_code == short_code).where(URL.user_id == user.id)
+    )
+    if url is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+    return url
+
+
+def _enforce_shortening_rate_limit(request: Request) -> None:
+    decision = check_rate_limit(_client_id(request), "shorten")
+    if not decision.available and not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rate-limit service unavailable; please retry",
+            headers={"Retry-After": str(decision.retry_after)},
+        )
+    if not decision.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many shortening requests",
+            headers={"Retry-After": str(decision.retry_after)},
+        )
 
 
 def _enforce_auth_rate_limit(request: Request) -> None:
@@ -381,19 +433,83 @@ def change_password(
     db.commit()
 
 
-@router.get("/account/links", response_model=list[DashboardLink])
+@router.post("/account/links", response_model=DashboardLink, status_code=status.HTTP_201_CREATED)
+def create_account_link(
+    data: URLCreate,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> DashboardLink:
+    _enforce_shortening_rate_limit(request)
+    try:
+        url = create_short_url(db, str(data.url), user_id=user.id)
+    except ShortCodeAllocationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not allocate a short URL; please retry",
+        ) from exc
+    invalidate_cached_url(url.short_code)
+    return _link_response(url)
+
+
+@router.get("/account/links", response_model=LinkPage)
 def account_links(
     user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
-) -> list[DashboardLink]:
-    base_url = get_settings().public_base_url.rstrip("/")
-    urls = db.scalars(
-        select(URL).where(URL.user_id == user.id).order_by(URL.id.desc()).limit(100)
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> LinkPage:
+    total = int(
+        db.scalar(select(func.count()).select_from(URL).where(URL.user_id == user.id))
+        or 0
     )
-    return [
-        DashboardLink(original_url=url.original_url, short_url=f"{base_url}/{url.short_code}")
-        for url in urls
-    ]
+    urls = db.scalars(
+        select(URL)
+        .where(URL.user_id == user.id)
+        .order_by(URL.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return LinkPage(
+        items=[_link_response(url) for url in urls],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
+
+
+@router.patch("/account/links/{short_code}", response_model=DashboardLink)
+def update_account_link(
+    data: LinkUpdate,
+    short_code: Annotated[
+        str,
+        ApiPath(min_length=6, max_length=32, pattern=r"^[A-Za-z0-9]+$"),
+    ],
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> DashboardLink:
+    url = _owned_link_or_404(db, user, short_code)
+    url.original_url = str(data.url)
+    db.commit()
+    db.refresh(url)
+    invalidate_cached_url(url.short_code)
+    return _link_response(url)
+
+
+@router.delete("/account/links/{short_code}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account_link(
+    short_code: Annotated[
+        str,
+        ApiPath(min_length=6, max_length=32, pattern=r"^[A-Za-z0-9]+$"),
+    ],
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> None:
+    url = _owned_link_or_404(db, user, short_code)
+    db.delete(url)
+    db.commit()
+    invalidate_cached_url(short_code)
 
 
 @router.get("/account/overview", response_model=AccountOverview)

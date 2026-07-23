@@ -60,6 +60,10 @@ def create_app() -> FastAPI:
     def settings_page():
         return FileResponse("static/settings.html")
 
+    @application.get("/dashboard", include_in_schema=False, response_class=FileResponse)
+    def dashboard_page():
+        return FileResponse("static/dashboard.html")
+
     @application.get("/favicon.ico", include_in_schema=False)
     def favicon() -> Response:
         """Avoid sending the browser's favicon request to the short-code route."""

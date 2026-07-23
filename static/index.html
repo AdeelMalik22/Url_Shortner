@@ -467,7 +467,7 @@
                 <div class="profile-popover" id="profile-popover" hidden>
                     <div class="profile-summary"><strong id="profile-name"></strong><span id="profile-username"></span>
                     </div>
-                    <a href="#dashboard">Dashboard</a><a href="/settings">Settings</a>
+                    <a href="/dashboard">Dashboard</a><a href="/settings">Settings</a>
                     <button id="signout-button" type="button">Sign out</button>
                 </div>
             </div>
@@ -536,7 +536,7 @@
     async function loadLinks() {
         const response = await fetch('/account/links');
         if (!response.ok) return;
-        const links = await response.json();
+        const {items: links = []} = await response.json();
         document.getElementById('dashboard').classList.add('show');
         document.getElementById('link-list').innerHTML = links.length ? links.map(link => `<div class="link-row"><div><a href="${escapeHtml(link.short_url)}" target="_blank" rel="noopener">${escapeHtml(link.short_url)}</a><div class="destination">${escapeHtml(link.original_url)}</div></div><button class="copy" type="button" data-copy="${escapeHtml(link.short_url)}">Copy</button></div>`).join('') : '<p>No saved links yet.</p>';
     }

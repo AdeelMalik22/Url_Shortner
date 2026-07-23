@@ -46,6 +46,12 @@ def settings_page() -> FileResponse:
     return FileResponse("static/settings.html")
 
 
+@router.get("/dashboard", include_in_schema=False)
+def dashboard_page() -> FileResponse:
+    """Reserve dashboard so it can never be interpreted as a short code."""
+    return FileResponse("static/dashboard.html")
+
+
 @router.get("/favicon.ico", include_in_schema=False)
 def favicon() -> Response:
     """Reserve the standard browser favicon path from short-code matching."""

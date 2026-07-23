@@ -32,7 +32,10 @@ async def test_account_owns_only_its_links(client, monkeypatch):
 
     dashboard = await client.get("/account/links")
     assert dashboard.status_code == 200
-    assert [entry["short_url"] for entry in dashboard.json()] == [first_short_url]
+    assert [entry["short_url"] for entry in dashboard.json()["items"]] == [
+        first_short_url
+    ]
+    assert dashboard.json()["total"] == 1
 
     overview = await client.get("/account/overview")
     assert overview.status_code == 200
@@ -55,11 +58,19 @@ async def test_account_owns_only_its_links(client, monkeypatch):
         },
     )
     assert second.status_code == 201
-    assert (await client.get("/account/links")).json() == []
+    assert (await client.get("/account/links")).json()["items"] == []
+
+    first_code = first_short_url.rsplit("/", 1)[1]
+    assert (
+        await client.patch(
+            f"/account/links/{first_code}",
+            json={"url": "https://example.com/not-allowed"},
+        )
+    ).status_code == 404
+    assert (await client.delete(f"/account/links/{first_code}")).status_code == 404
 
     # Sharing a short URL still works; the dashboard ownership is private.
-    code = first_short_url.rsplit("/", 1)[1]
-    redirect = await client.get(f"/{code}", follow_redirects=False)
+    redirect = await client.get(f"/{first_code}", follow_redirects=False)
     assert redirect.status_code == 307
 
 
@@ -91,6 +102,10 @@ async def test_account_entry_serves_the_account_page(client):
     settings = await client.get("/settings")
     assert settings.status_code == 200
     assert "profile-form" in settings.text
+
+    dashboard = await client.get("/dashboard")
+    assert dashboard.status_code == 200
+    assert "create-form" in dashboard.text
 
 
 @pytest.mark.anyio
@@ -206,3 +221,43 @@ async def test_profile_photo_can_be_uploaded_and_removed(client):
     removed = await client.delete("/account/avatar")
     assert removed.status_code == 204
     assert (await client.get("/account/profile")).json()["avatar_url"] is None
+
+
+@pytest.mark.anyio
+async def test_dashboard_link_crud_and_pagination(client):
+    registration = {
+        "first_name": "Dorothy",
+        "last_name": "Vaughan",
+        "username": "dorothy_vaughan",
+        "email": "dorothy@example.com",
+        "password": "correct-horse-battery",
+        "confirm_password": "correct-horse-battery",
+    }
+    assert (await client.post("/auth/register", json=registration)).status_code == 201
+
+    created = []
+    for number in range(3):
+        response = await client.post(
+            "/account/links",
+            json={"url": f"https://example.com/link-{number}"},
+        )
+        assert response.status_code == 201
+        created.append(response.json())
+
+    first_page = await client.get("/account/links?page=1&page_size=2")
+    assert first_page.status_code == 200
+    assert first_page.json()["total"] == 3
+    assert first_page.json()["total_pages"] == 2
+    assert len(first_page.json()["items"]) == 2
+
+    target = created[0]
+    updated = await client.patch(
+        f"/account/links/{target['short_code']}",
+        json={"url": "https://example.com/updated"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["original_url"] == "https://example.com/updated"
+
+    deleted = await client.delete(f"/account/links/{target['short_code']}")
+    assert deleted.status_code == 204
+    assert (await client.get("/account/links")).json()["total"] == 2
